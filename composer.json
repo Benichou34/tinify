@@ -1,0 +1,19 @@
+{
+	"name" : "Benichou34/tinify",
+	"description" : "TinyPNG image compression module for Prestashop",
+	"homepage" : "https://github.com/Benichou34/tinify",
+	"license" : "MIT",
+	"config" : {
+		"preferred-install" : "dist"
+	},
+	"type" : "prestashop-module",
+	"authors" : [{
+			"email" : "benichou.software@gmail.com",
+			"name" : "Benichou"
+		}
+	],
+	"require" : {
+		"php" : ">=5.4",
+		"tinify/tinify" : "*"
+	}
+}
