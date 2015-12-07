@@ -2,7 +2,7 @@
 <module>
 	<name>tinify</name>
 	<displayName><![CDATA[TinyPNG image compression]]></displayName>
-	<version><![CDATA[1.0]]></version>
+	<version><![CDATA[1.1]]></version>
 	<description><![CDATA[Make your website faster by compressing your JPEG and PNG images]]></description>
 	<author><![CDATA[Benichou]]></author>
 	<tab><![CDATA[administration]]></tab>

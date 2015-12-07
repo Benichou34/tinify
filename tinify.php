@@ -32,6 +32,7 @@ if (!defined('_PS_VERSION_'))
 
 require_once(__DIR__.'/vendor/autoload.php');
 require_once(__DIR__.'/classes/filecache.php');
+require_once(__DIR__.'/classes/dirlist.php');
 require_once(__DIR__.'/classes/report.php');
 
 class Tinify extends Module
@@ -42,7 +43,7 @@ class Tinify extends Module
 		$this->name = 'tinify';
 		$this->tab = 'administration';
 		$this->author = 'Benichou';
-		$this->version = '1.0';
+		$this->version = '1.1';
 
 		parent::__construct();
 		$this->displayName = $this->l('TinyPNG image compression');
@@ -58,7 +59,7 @@ class Tinify extends Module
 
 	public function install()
 	{
-		if (!parent::install() || !FileCache::createDb())
+		if (!parent::install() || !FileCache::createDb() || !DirList::createDb())
 			return false;
 
 		return true;
@@ -69,22 +70,8 @@ class Tinify extends Module
 		Configuration::deleteByName('TINIFY_API_KEY');
 		Configuration::deleteByName('TINIFY_REPORT');
 		Configuration::deleteByName('TINIFY_LOGS');
-		Configuration::deleteByName('TINIFY_PRODUCTS');
-		Configuration::deleteByName('TINIFY_CATEGORIES');
-		Configuration::deleteByName('TINIFY_MANUFACTURERS');
-		Configuration::deleteByName('TINIFY_CARRIERS');
-		Configuration::deleteByName('TINIFY_SUPPLIERS');
-		Configuration::deleteByName('TINIFY_SCENES');
-		Configuration::deleteByName('TINIFY_STORES');
-		Configuration::deleteByName('TINIFY_COLORS');
-		Configuration::deleteByName('TINIFY_LANGUAGES');
-		Configuration::deleteByName('TINIFY_EMPLOYEES');
-		Configuration::deleteByName('TINIFY_MODULES');
-		Configuration::deleteByName('TINIFY_THEME');
-		Configuration::deleteByName('TINIFY_THEME_MODULES');
-		Configuration::deleteByName('TINIFY_IMAGES');
 
-		if (!FileCache::deleteDb())
+		if (!FileCache::deleteDb() || !DirList::deleteDb())
 			return false;
 
 		return parent::uninstall();
@@ -92,53 +79,139 @@ class Tinify extends Module
 
 	public function getContent()
 	{
+		if (Tools::isSubmit('addtinify'))
+			return $this->renderFormAdd();
+		else if (Tools::isSubmit('updatetinify'))
+			return $this->renderFormAdd(new DirList(Tools::getValue('id')));
+
 		// If form has been sent
 		$output = '';
+
+		if (Tools::isSubmit('submitAddtinify'))
+		{
+			$dir = new DirList(Tools::getValue('id'));
+			$dir->path = Tools::getValue('TINIFY_DIR_PATH');
+			$dir->desc = Tools::getValue('TINIFY_DIR_DESC');
+			$dir->recursive = Tools::getValue('TINIFY_DIR_RECURSIVE');
+			$dir->enabled = Tools::getValue('TINIFY_DIR_ENABLED');
+			if (!$dir->save())
+				$output .= $this->displayError($this->l('Save of directory failed.'));
+		}
+
+		if (Tools::isSubmit('recursivetinify'))
+		{
+			$dir = new DirList(Tools::getValue('id'));
+			if(!$dir)
+				$output .= $this->displayError($this->l('Target directory not exist.'));
+
+			$dir->recursive = $dir->recursive? false: true;
+			if (!$dir->save())
+				$output .= $this->displayError($this->l('Save of directory failed.'));
+		}
+
+		if (Tools::isSubmit('enabledtinify'))
+		{
+			$dir = new DirList(Tools::getValue('id'));
+			if(!$dir)
+				$output .= $this->displayError($this->l('Target directory not exist.'));
+
+			$dir->enabled = $dir->enabled? false: true;
+			if (!$dir->save())
+				$output .= $this->displayError($this->l('Save of directory failed.'));
+		}
+
+		if (Tools::isSubmit('deletetinify'))
+		{
+			$dir = new DirList(Tools::getValue('id'));
+			if (!$dir->delete())
+				$output .= $this->displayError($this->l('Delete of directory failed.'));
+		}
 
 		if (Tools::isSubmit('submit'.$this->name))
 		{
 			Configuration::updateValue('TINIFY_API_KEY', Tools::getValue('TINIFY_API_KEY'));
-			Configuration::updateValue('TINIFY_LOGS', Tools::getValue('TINIFY_LOGS_on'));
-			Configuration::updateValue('TINIFY_PRODUCTS', Tools::getValue('TINIFY_PRODUCTS_on'));
-			Configuration::updateValue('TINIFY_CATEGORIES', Tools::getValue('TINIFY_CATEGORIES_on'));
-			Configuration::updateValue('TINIFY_MANUFACTURERS', Tools::getValue('TINIFY_MANUFACTURERS_on'));
-			Configuration::updateValue('TINIFY_CARRIERS', Tools::getValue('TINIFY_CARRIERS_on'));
-			Configuration::updateValue('TINIFY_SUPPLIERS', Tools::getValue('TINIFY_SUPPLIERS_on'));
-			Configuration::updateValue('TINIFY_SCENES', Tools::getValue('TINIFY_SCENES_on'));
-			Configuration::updateValue('TINIFY_STORES', Tools::getValue('TINIFY_STORES_on'));
-			Configuration::updateValue('TINIFY_COLORS', Tools::getValue('TINIFY_COLORS_on'));
-			Configuration::updateValue('TINIFY_LANGUAGES', Tools::getValue('TINIFY_LANGUAGES_on'));
-			Configuration::updateValue('TINIFY_EMPLOYEES', Tools::getValue('TINIFY_EMPLOYEES_on'));
-			Configuration::updateValue('TINIFY_MODULES', Tools::getValue('TINIFY_MODULES_on'));
-			Configuration::updateValue('TINIFY_THEME', Tools::getValue('TINIFY_THEME_on'));
-			Configuration::updateValue('TINIFY_THEME_MODULES', Tools::getValue('TINIFY_THEME_MODULES_on'));
-			Configuration::updateValue('TINIFY_IMAGES', Tools::getValue('TINIFY_IMAGES_on'));
+			Configuration::updateValue('TINIFY_LOGS', Tools::getValue('TINIFY_LOGS'));
 
-			if (Tools::isSubmit('submitRunNow'))
+			try // Just validate the API key
 			{
-				$output .= $this->apply();
+				\Tinify\setKey(Configuration::get('TINIFY_API_KEY'));
+				\Tinify\validate();
+
+				$output .= $this->displayConfirmation($this->l('Settings updated successfully'));
 			}
-			else
+			catch(\Tinify\Exception $e)
 			{
-				try // Just validate the API key
-				{
-					\Tinify\setKey(Configuration::get('TINIFY_API_KEY'));
-					\Tinify\validate();
-
-					$output .= $this->displayConfirmation($this->l('Settings updated successfully'));
-				}
-				catch(\Tinify\Exception $e)
-				{
-					$output .= $this->displayError($this->l('Validation of API key failed'));
-				}
+				$output .= $this->displayError($this->l('Validation of API key failed'));
 			}
 		}
 
+		if (Tools::isSubmit('submitRunNow'))
+			$output .= $this->apply();
+
 		$output .= $this->renderForm();
+		$output .= $this->rendertList();
+		$output .= $this->renderFormReport();
+
 		return $output;
 	}
 
-	public function renderForm()
+	private function rendertList()
+	{
+		$this->fields_list = array(
+			'id' => array(
+				'title' => $this->l('ID'),
+				'width' => 60
+			),
+			'path' => array(
+				'title' => $this->l('Path'),
+				'width' => 'auto',
+				'type' => 'text'
+			),
+			'desc' => array(
+				'title' => $this->l('Description'),
+				'width' => 'auto',
+				'type' => 'text'
+			),
+			'recursive' => array(
+				'title' => $this->l('Recursive'),
+				'active' => 'recursive',
+				'type' => 'bool',
+				'align' => 'center'
+			),
+			'enabled' => array(
+				'title' => $this->l('Enabled'),
+				'active' => 'enabled',
+				'type' => 'bool',
+				'align' => 'center'
+			)
+		);
+
+		$helper = new HelperList();
+		$helper->shopLinkType = '';
+		$helper->simple_header = false;
+
+		// Actions to be displayed in the "Actions" column
+		$helper->actions = array('edit', 'delete');
+
+		$helper->identifier = 'id';
+		$helper->title = $this->l('Directories list');
+		$helper->table = $this->name;
+		$helper->show_toolbar = true;
+		$helper->toolbar_btn['new'] = array(
+			'href' => AdminController::$currentIndex.'&configure='.$this->name.'&add'.$this->name.'&token='.Tools::getAdminTokenLite('AdminModules'),
+			'desc' => $this->l('Add new')
+		);
+
+		$helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false).'&configure='.$this->name.'&tab_module='.$this->tab.'&module_name='.$this->name;
+		$helper->token = Tools::getAdminTokenLite('AdminModules');
+
+		$listContent = DirList::getContent();
+
+		$helper->listTotal = count($listContent);
+		return $helper->generateList($listContent, $this->fields_list);
+	}
+
+	private function renderForm()
 	{
 		$helper = new HelperForm();
 		$helper->show_toolbar = false;
@@ -152,10 +225,6 @@ class Tinify extends Module
 		// Title and toolbar
 		$helper->title = $this->displayName;
 		$helper->submit_action = 'submit'.$this->name;
-
-		$this->context->smarty->assign(array(
-			'tinify_report' => json_decode(Configuration::get('TINIFY_REPORT'))
-		));
 
 		$fields_forms = array(
 			'form' => array(
@@ -173,243 +242,23 @@ class Tinify extends Module
 						'hint' => $this->l('You can get an API key by registering in tinypng.com/developers.')
 					),
 					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_PRODUCTS',
-						'desc' => _PS_PROD_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify products images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_CATEGORIES',
-						'desc' => _PS_CAT_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify categories images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_MANUFACTURERS',
-						'desc' => _PS_MANU_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify manufacturers images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_CARRIERS',
-						'desc' => _PS_SHIP_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify carriers (shipping) images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_SUPPLIERS',
-						'desc' => _PS_SUPP_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify suppliers images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_SCENES',
-						'desc' => _PS_SCENE_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify scenes images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_STORES',
-						'desc' => _PS_STORE_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify stores images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_COLORS',
-						'desc' => _PS_COL_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify colors images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_LANGUAGES',
-						'desc' => _PS_LANG_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify languages images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_EMPLOYEES',
-						'desc' => _PS_EMPLOYEE_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify employees images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_MODULES',
-						'desc' => _PS_MODULE_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify modules images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_THEME',
-						'desc' => _PS_ALL_THEMES_DIR_._THEME_NAME_.'/img/, /mobile/img',
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify theme specifics images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_THEME_MODULES',
-						'desc' => _PS_ALL_THEMES_DIR_._THEME_NAME_.'/modules/',
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify theme modules images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
-						'name' => 'TINIFY_IMAGES',
-						'desc' => _PS_CORE_IMG_DIR_,
-						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Tinify Prestashop core images'),
-									'val' => '1'
-								),
-							),
-							'id' => 'id',
-							'name' => 'name'
-						)
-					),
-					array(
-						'type' => 'checkbox',
+						'type' => 'switch',
+						'label' => $this->l('Write logs'),
 						'name' => 'TINIFY_LOGS',
 						'desc' => $this->l('Log to ')._PS_ROOT_DIR_.'/log/'.$this->name.'.log',
+						'required' => false,
+						'is_bool' => true,
 						'values' => array(
-							'query' => array(
-								array(
-									'id' => 'on',
-									'name' => $this->l('Write logs.'),
-									'val' => '1'
-								),
+							array(
+								'id' => 'TINIFY_LOGS_on',
+								'value' => 1,
+								'label' => $this->l('Enabled')
 							),
-							'id' => 'id',
-							'name' => 'name'
+							array(
+								'id' => 'TINIFY_LOGS_off',
+								'value' => 0,
+								'label' => $this->l('Disabled')
+							)
 						)
 					)
 				),
@@ -419,6 +268,31 @@ class Tinify extends Module
 				)
 			)
 		);
+
+		// Load current value
+		$helper->fields_value['TINIFY_API_KEY'] = Configuration::get('TINIFY_API_KEY');
+		$helper->fields_value['TINIFY_LOGS'] = Configuration::get('TINIFY_LOGS');
+
+		return $helper->generateForm(array($fields_forms));
+	}
+
+	private function renderFormReport()
+	{
+		$helper = new HelperForm();
+		$helper->show_toolbar = false;
+		$lang = new Language((int)Configuration::get('PS_LANG_DEFAULT'));
+		$helper->default_form_language = $lang->id;
+		$helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+
+		$helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false).'&configure='.$this->name.'&tab_module='.$this->tab.'&module_name='.$this->name;
+		$helper->token = Tools::getAdminTokenLite('AdminModules');
+
+		// Title and toolbar
+		$helper->title = $this->displayName;
+
+		$this->context->smarty->assign(array(
+			'tinify_report' => json_decode(Configuration::get('TINIFY_REPORT'))
+		));
 
 		$fields_refresh = array(
 			'form' => array(
@@ -456,48 +330,155 @@ class Tinify extends Module
 			)
 		);
 
-		// Load current value
-		$helper->fields_value['TINIFY_API_KEY'] = Configuration::get('TINIFY_API_KEY');
-		$helper->fields_value['TINIFY_LOGS_on'] = Configuration::get('TINIFY_LOGS');
-		$helper->fields_value['TINIFY_PRODUCTS_on'] = Configuration::get('TINIFY_PRODUCTS');
-		$helper->fields_value['TINIFY_CATEGORIES_on'] = Configuration::get('TINIFY_CATEGORIES');
-		$helper->fields_value['TINIFY_MANUFACTURERS_on'] = Configuration::get('TINIFY_MANUFACTURERS');
-		$helper->fields_value['TINIFY_CARRIERS_on'] = Configuration::get('TINIFY_CARRIERS');
-		$helper->fields_value['TINIFY_SUPPLIERS_on'] = Configuration::get('TINIFY_SUPPLIERS');
-		$helper->fields_value['TINIFY_SCENES_on'] = Configuration::get('TINIFY_SCENES');
-		$helper->fields_value['TINIFY_STORES_on'] = Configuration::get('TINIFY_STORES');
-		$helper->fields_value['TINIFY_COLORS_on'] = Configuration::get('TINIFY_COLORS');
-		$helper->fields_value['TINIFY_LANGUAGES_on'] = Configuration::get('TINIFY_LANGUAGES');
-		$helper->fields_value['TINIFY_EMPLOYEES_on'] = Configuration::get('TINIFY_EMPLOYEES');
-		$helper->fields_value['TINIFY_MODULES_on'] = Configuration::get('TINIFY_MODULES');
-		$helper->fields_value['TINIFY_THEME_on'] = Configuration::get('TINIFY_THEME');
-		$helper->fields_value['TINIFY_THEME_MODULES_on'] = Configuration::get('TINIFY_THEME_MODULES');
-		$helper->fields_value['TINIFY_IMAGES_on'] = Configuration::get('TINIFY_IMAGES');
-
-		return $helper->generateForm(array($fields_forms, $fields_refresh, $fields_clear));
+		return $helper->generateForm(array($fields_refresh, $fields_clear));
 	}
 
-	private function logError($msg, $report = null)
+	private function renderFormAdd($dirInfo = null)
+	{
+		$helper = new HelperForm();
+		$helper->show_toolbar = false;
+		$lang = new Language((int)Configuration::get('PS_LANG_DEFAULT'));
+		$helper->default_form_language = $lang->id;
+		$helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') ? Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG') : 0;
+
+		$helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false).'&configure='.$this->name.'&tab_module='.$this->tab.'&module_name='.$this->name;
+		$helper->token = Tools::getAdminTokenLite('AdminModules');
+
+		if($dirInfo && isset($dirInfo->id))
+		{
+			$title = $this->l('Edit directory');
+			$helper->currentIndex .= '&id='.$dirInfo->id;
+		}
+		else
+		{
+			$title = $this->l('Add directory');
+		}
+
+		// Title and toolbar
+		$helper->title = $this->displayName;
+		$helper->submit_action = 'submitAdd'.$this->name;
+
+		$back = Tools::safeOutput(Tools::getValue('back', ''));
+		if (!isset($back) || empty($back))
+			$back = AdminController::$currentIndex.'&configure='.$this->name.'&token='.Tools::getAdminTokenLite('AdminModules');
+
+		$fields_forms = array(
+			'form' => array(
+				'legend' => array(
+					'title' => $title,
+					'icon' => 'icon-folder-open-o'
+				),
+				'input' => array(
+					array(
+						'type' => 'text',
+						'label' => $this->l('Path'),
+						'name' => 'TINIFY_DIR_PATH',
+						'size' => 256,
+						'required' => true,
+						'hint' => $this->l('Target path.')
+					),
+					array(
+						'type' => 'text',
+						'label' => $this->l('Description'),
+						'name' => 'TINIFY_DIR_DESC',
+						'size' => 50,
+						'required' => false,
+						'hint' => $this->l('Description.')
+					),
+					array(
+						'type' => 'switch',
+						'label' => $this->l('Recursive'),
+						'name' => 'TINIFY_DIR_RECURSIVE',
+						'required' => false,
+						'is_bool' => true,
+						'values' => array(
+							array(
+								'id' => 'TINIFY_DIR_RECURSIVE_on',
+								'value' => 1,
+								'label' => $this->l('Yes')
+							),
+							array(
+								'id' => 'TINIFY_DIR_RECURSIVE_off',
+								'value' => 0,
+								'label' => $this->l('No')
+							)
+						)
+					),
+					array(
+						'type' => 'switch',
+						'label' => $this->l('Enabled'),
+						'name' => 'TINIFY_DIR_ENABLED',
+						'required' => false,
+						'is_bool' => true,
+						'values' => array(
+							array(
+								'id' => 'TINIFY_DIR_ENABLED_on',
+								'value' => 1,
+								'label' => $this->l('Enabled')
+							),
+							array(
+								'id' => 'TINIFY_DIR_ENABLED_off',
+								'value' => 0,
+								'label' => $this->l('Disabled')
+							)
+						)
+					)
+				),
+				'buttons' => array(
+					'cancelBlock' => array(
+						'title' => $this->l('Cancel'),
+						'href' => $back,
+						'icon' => 'process-icon-cancel'
+					)
+				),
+				'submit' => array(
+					'title' => $this->l('Save'),
+					'class' => 'btn btn-default pull-right fixed-width-sm'
+				)
+			)
+		);
+
+		// Load current value
+		if ($dirInfo)
+		{
+			$helper->fields_value['TINIFY_DIR_PATH'] = $dirInfo->path;
+			$helper->fields_value['TINIFY_DIR_DESC'] = $dirInfo->desc;
+			$helper->fields_value['TINIFY_DIR_RECURSIVE'] = $dirInfo->recursive;
+			$helper->fields_value['TINIFY_DIR_ENABLED'] = $dirInfo->enabled;
+		}
+
+		return $helper->generateForm(array($fields_forms));
+	}
+
+	private function logError($msg, &$report = null)
 	{
 		if (isset($this->logger))
 			$this->logger->logError($msg);
 
 		if ($report)
-			$report->error = $msg;
+			$report->error[] = $msg;
 
 		return  $this->displayError($msg);
 	}
 
-	private function tinifyDirectory($dir, &$report, $recursive = true)
+	private function logWarning($msg, &$report = null)
+	{
+		if (isset($this->logger))
+			$this->logger->logWarning($msg);
+
+		if ($report)
+			$report->warning[] = $msg;
+	}
+
+	private function tinifyDirectory($dir, $recursive, &$report)
 	{
 		if (!file_exists($dir))
 		{
-			if (isset($this->logger))
-				$this->logger->logWarning($dir." does not exist");
+			$this->logWarning($dir.' does not exist', $report);
 			return;
 		}
 
-		if ($recursive === true)
+		if ($recursive)
 			$Files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir));
 		else
 			$Files = new FilesystemIterator($dir);
@@ -562,7 +543,7 @@ class Tinify extends Module
 		}
 		catch(\Tinify\Exception $e)
 		{
-			return logError('Validation of API key failed: '.$e->getMessage());
+			return $this->logError('Validation of API key failed');
 		}
 
 		$report = new TinifyReport();
@@ -571,50 +552,11 @@ class Tinify extends Module
 		// Tinify
 		try
 		{
-			if (Configuration::get('TINIFY_PRODUCTS'))
-				$this->tinifyDirectory(_PS_PROD_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_CATEGORIES'))
-				$this->tinifyDirectory(_PS_CAT_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_MANUFACTURERS'))
-				$this->tinifyDirectory(_PS_MANU_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_CARRIERS'))
-				$this->tinifyDirectory(_PS_SHIP_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_SUPPLIERS'))
-				$this->tinifyDirectory(_PS_SUPP_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_SCENES'))
-				$this->tinifyDirectory(_PS_SCENE_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_STORES'))
-				$this->tinifyDirectory(_PS_STORE_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_COLORS'))
-				$this->tinifyDirectory(_PS_COL_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_LANGUAGES'))
-				$this->tinifyDirectory(_PS_LANG_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_EMPLOYEES'))
-				$this->tinifyDirectory(_PS_EMPLOYEE_IMG_DIR_, $report);
-
-			if (Configuration::get('TINIFY_MODULES'))
-				$this->tinifyDirectory(_PS_MODULE_DIR_, $report);
-
-			if (Configuration::get('TINIFY_THEME'))
+			foreach (DirList::getDirList() as $dir)
 			{
-				$this->tinifyDirectory(_PS_ALL_THEMES_DIR_._THEME_NAME_.'/img/', $report);
-				$this->tinifyDirectory(_PS_ALL_THEMES_DIR_._THEME_NAME_.'/mobile/img/', $report);
+				if ($dir->enabled)
+					$this->tinifyDirectory($dir->path, $dir->recursive, $report);
 			}
-
-			if (Configuration::get('TINIFY_THEME_MODULES'))
-				$this->tinifyDirectory(_PS_ALL_THEMES_DIR_._THEME_NAME_.'/modules/', $report);
-
-			if (Configuration::get('TINIFY_IMAGES'))
-				$this->tinifyDirectory(_PS_CORE_IMG_DIR_, $report, false);
 
 			if (!$report->fileCounter)
 			{
@@ -626,23 +568,23 @@ class Tinify extends Module
 		}
 		catch(\Tinify\AccountException $e)
 		{
-			$output .= logError('Verify your account limit: '.$e->getMessage(), $report);
+			$output .= $this->logError('Verify your account limit: '.$e->getMessage(), $report);
 		}
 		catch(\Tinify\ClientException $e)
 		{
-			$output .= logError('Check your source image and request options: '.$e->getMessage(), $report);
+			$output .= $this->logError('Check your source image and request options: '.$e->getMessage(), $report);
 		}
 		catch(\Tinify\ServerException $e)
 		{
-			$output .= logError('Temporary issue with the Tinify API: '.$e->getMessage(), $report);
+			$output .= $this->logError('Temporary issue with the Tinify API: '.$e->getMessage(), $report);
 		}
 		catch(\Tinify\ConnectionException $e)
 		{
-			$output .= logError('A network connection error occurred: '.$e->getMessage(), $report);
+			$output .= $this->logError('A network connection error occurred: '.$e->getMessage(), $report);
 		}
 		catch(Exception $e)
 		{
-			$output .= logError('Unrelated exception: '.$e->getMessage(), $report);
+			$output .= $this->logError('Unrelated exception: '.$e->getMessage(), $report);
 		}
 
 		Configuration::updateValue('TINIFY_REPORT', json_encode($report));

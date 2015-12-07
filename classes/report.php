@@ -33,6 +33,6 @@ class TinifyReport
 	public $fileCounter = 0;
 	public $gainSize = 0;
 	public $compressionCount = 0;
-	public $error = null;
+	public $error = array();
+	public $warning = array();
 }
-

@@ -38,7 +38,10 @@
 	<i class="icon-fixed-width icon-file-image-o"></i><span>{l s='Files: ' mod='tinify'}{$tinify_report->fileCounter|intval}</span></br>
 	<i class="icon-fixed-width icon-compress"></i><span>{l s='Gain: ' mod='tinify'}{($tinify_report->gainSize / 1024)|intval} ko</span></br>
 	<i class="icon-fixed-width icon-money"></i><span>{l s='Compression count: ' mod='tinify'}{$tinify_report->compressionCount|intval}</span></br>
-	{if !empty($tinify_report->error)}
-	<i class="icon-fixed-width icon-exclamation-triangle"></i><span>{l s='Error: ' mod='tinify'}{$tinify_report->error|escape:'html':'UTF-8'}</span>
-	{/if}
+	{foreach from=$tinify_report->error item=error}
+		<i class="icon-fixed-width icon-times-circle"></i><span>{l s='Error: ' mod='tinify'}{$error|escape:'html':'UTF-8'}</span>
+	{/foreach}
+	{foreach from=$tinify_report->warning item=warning}
+		<i class="icon-fixed-width icon-exclamation-triangle"></i><span>{l s='Warning: ' mod='tinify'}{$warning|escape:'html':'UTF-8'}</span>
+	{/foreach}
 {/if}
