@@ -68,8 +68,8 @@ class Tinify extends Module
 	public function uninstall()
 	{
 		Configuration::deleteByName('TINIFY_API_KEY');
-		Configuration::deleteByName('TINIFY_REPORT');
 		Configuration::deleteByName('TINIFY_LOGS');
+		TinifyReport::delete();
 
 		if (!FileCache::deleteDb() || !DirList::deleteDb())
 			return false;
@@ -141,7 +141,7 @@ class Tinify extends Module
 			}
 			catch(\Tinify\Exception $e)
 			{
-				$output .= $this->displayError($this->l('Validation of API key failed'));
+				$output .= $this->displayError($this->l('Validation of API key failed').': '.$e->getMessage());
 			}
 		}
 
@@ -290,8 +290,10 @@ class Tinify extends Module
 		// Title and toolbar
 		$helper->title = $this->displayName;
 
+		$cronUrl = _PS_BASE_URL_SSL_._MODULE_DIR_.$this->name.'/cron.php';
 		$this->context->smarty->assign(array(
-			'tinify_report' => json_decode(Configuration::get('TINIFY_REPORT'))
+			'tinify_report' => TinifyReport::getLast(),
+			'tinify_cron_url' => $cronUrl
 		));
 
 		$fields_refresh = array(
@@ -303,7 +305,7 @@ class Tinify extends Module
 				'input' => array(
 					array(
 						'type' => 'html',
-						'html_content' => $this->l('For automatically compress your new images, create a "Cron task" to load the following URL at the time you would like: ').'<br/>'._PS_BASE_URL_SSL_._MODULE_DIR_.$this->name.'/cron.php'
+						'html_content' => $this->l('For automatically compress your new images, create a "Cron task" to load the following URL at the time you would like: ').'<br/>'.$cronUrl
 					)
 				),
 				'submit' => array(
@@ -456,7 +458,7 @@ class Tinify extends Module
 			$this->logger->logError($msg);
 
 		if ($report)
-			$report->error[] = $msg;
+			$report->logError($msg);
 
 		return  $this->displayError($msg);
 	}
@@ -467,7 +469,7 @@ class Tinify extends Module
 			$this->logger->logWarning($msg);
 
 		if ($report)
-			$report->warning[] = $msg;
+			$report->logWarning($msg);
 	}
 
 	private function tinifyDirectory($dir, $recursive, &$report)
@@ -515,15 +517,13 @@ class Tinify extends Module
 				$fileSize = $object->getSize();
 
 				$object->tinify();
+
 				$newFileSize = $object->getSize();
-
+				$gainSize = $fileSize - $newFileSize;
 				$dirFileCounter++;
-				$dirGainSize += $fileSize - $newFileSize;
+				$dirGainSize += $gainSize;
 
-				$report->fileCounter++;
-				$report->gainSize += $fileSize - $newFileSize;
-				$report->lastUpdate = time();
-				$report->compressionCount = \Tinify\getCompressionCount();
+				$report->update($gainSize);
 
 				if (isset($this->logger))
 					$this->logger->logInfo('['.$filename.'] '.$fileSize.'=>'.$newFileSize.' ('.(100 - (int)($newFileSize * 100 / $fileSize)).'%)');
@@ -536,32 +536,24 @@ class Tinify extends Module
 
 	public function apply()
 	{
-		try
-		{
-			\Tinify\setKey(Configuration::get('TINIFY_API_KEY'));
-			\Tinify\validate();
-		}
-		catch(\Tinify\Exception $e)
-		{
-			return $this->logError('Validation of API key failed');
-		}
+		if (TinifyReport::isRunning())
+			return $this->displayError($this->l('Tinify already running.'));
 
+		$output = '';
 		$report = new TinifyReport();
-		$output = "";
 
 		// Tinify
 		try
 		{
+			\Tinify\setKey(Configuration::get('TINIFY_API_KEY'));
+			\Tinify\validate();
+
+			$report->beginTinify();
+
 			foreach (DirList::getDirList() as $dir)
 			{
 				if ($dir->enabled)
 					$this->tinifyDirectory($dir->path, $dir->recursive, $report);
-			}
-
-			if (!$report->fileCounter)
-			{
-				$report->lastUpdate = time();
-				$report->compressionCount = \Tinify\getCompressionCount();
 			}
 
 			$output .= $this->displayConfirmation($this->l('Tinify finished successfully.'));
@@ -587,10 +579,9 @@ class Tinify extends Module
 			$output .= $this->logError('Unrelated exception: '.$e->getMessage(), $report);
 		}
 
-		Configuration::updateValue('TINIFY_REPORT', json_encode($report));
-
+		$report->endTinify();
 		if (isset($this->logger))
-			$this->logger->logInfo('Report '.Configuration::get('TINIFY_REPORT'));
+			$this->logger->logInfo('Report '.TinifyReport::getLast(true));
 
 		return $output;
 	}

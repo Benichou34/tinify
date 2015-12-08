@@ -29,10 +29,74 @@
 
 class TinifyReport
 {
+	const STATUS_RUNNING = 'Running...';
+	const STATUS_DONE = 'Done';
+
+	public $status;
 	public $lastUpdate = 0;
 	public $fileCounter = 0;
 	public $gainSize = 0;
 	public $compressionCount = 0;
 	public $error = array();
 	public $warning = array();
+
+	public function beginTinify()
+	{
+		$this->status = self::STATUS_RUNNING;
+		$this->update();
+	}
+
+	public function endTinify()
+	{
+		$this->status = self::STATUS_DONE;
+		$this->update();
+	}
+
+	public static function delete()
+	{
+		Configuration::deleteByName('TINIFY_REPORT');
+	}
+
+	public static function getLast($json = false)
+	{
+		$lastReport = Configuration::get('TINIFY_REPORT');
+		if(!$json)
+			return json_decode($lastReport);
+
+		return $lastReport;
+	}
+
+	public static function isRunning()
+	{
+		$lastReport = self::getLast();
+		return (isset($lastReport->status) && $lastReport->status == self::STATUS_RUNNING);
+	}
+
+	public function logError($msg)
+	{
+		$this->error[] = $msg;
+	}
+
+	public function logWarning($msg)
+	{
+		$this->warning[] = $msg;
+	}
+
+	public function update($gainSize = null)
+	{
+		if ($gainSize != null)
+		{
+			$this->fileCounter++;
+			$this->gainSize += $gainSize;
+		}
+
+		$this->lastUpdate = time();
+		$this->compressionCount = \Tinify\getCompressionCount();
+		$this->save();
+	}
+
+	private function save()
+	{
+		Configuration::updateValue('TINIFY_REPORT', json_encode($this));
+	}
 }
